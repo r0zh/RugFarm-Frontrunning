@@ -8,6 +8,7 @@ from solders.keypair import Keypair
 from solders.transaction import Transaction
 from solders.system_program import transfer, TransferParams
 from solana.rpc.commitment import Confirmed
+import threading
 
 # Cargar variables de entorno
 load_dotenv()
@@ -17,8 +18,11 @@ PRIVATE_KEY = os.getenv('PRIVATE_KEY')
 PUBLIC_KEY = os.getenv('PUBLIC_KEY')
 RPC_URL = f"https://devnet.helius-rpc.com/?api-key={os.getenv('HELIUS_API_KEY')}"
 TOKEN_ADDRESS = "nombre_token"  # Se define más adelante
-RIESGO_USDT = 100  # Monto en USDT definido por el usuario
-CONDICION_SALIDA = False  # Condición de salida (por definir)
+RIESGO_USDT = 10  # Monto en USDT definido por el usuario
+CONDICION_SALIDA = True  # Activar la condición de salida
+UMBRAL_SALIDA = 1.01  # Salir cuando el valor del token aumente un 1%
+UMBRAL_BAJA = 0.96  # Salir si el valor del token disminuye un 4%
+STOP_MANUAL = False  # Variable para detener manualmente el bot
 
 # Validar claves
 if not PRIVATE_KEY:
@@ -112,11 +116,14 @@ def comprar_token(riesgo_sol):
         )
         response = client.send_transaction(txn, keypair, opts={"skip_preflight": True, "preflight_commitment": Confirmed})
         print(f"✅ Compra simulada completada: {response}")
+        return obtener_precio_solana()
     except Exception as e:
         print(f"❌ Error al realizar la compra simulada: {e}")
+        return None
 
 # Función principal del bot
 def main():
+    global STOP_MANUAL
     precio_solana = obtener_precio_solana()
     if not precio_solana:
         print("❌ No se pudo obtener el precio de Solana. Saliendo...")
@@ -131,14 +138,26 @@ def main():
         return
 
     calcular_riesgo_porcentual(balance, riesgo_sol)
+    precio_compra = comprar_token(riesgo_sol)
+    if precio_compra:
+        while CONDICION_SALIDA and not STOP_MANUAL:
+            precio_actual = obtener_precio_solana()
+            if precio_actual:
+                if precio_actual >= precio_compra * UMBRAL_SALIDA:
+                    print(f"✅ Condición de salida cumplida (Subida): Precio actual {precio_actual:.2f} USD")
+                    break
+                if precio_actual <= precio_compra * UMBRAL_BAJA:
+                    print(f"✅ Condición de salida cumplida (Bajada): Precio actual {precio_actual:.2f} USD")
+                    break
+            time.sleep(10)
+    print("✅ Bot detenido.")
 
-    # Realizar una única compra
-    comprar_token(riesgo_sol)
-    print("✅ Compra única realizada.")
-    
-    if CONDICION_SALIDA:
-        vender_token(riesgo_sol)
-        print("✅ Venta realizada por condición de salida. Bot detenido.")
+# Hilo para el botón de stop manual
+def stop_bot():
+    global STOP_MANUAL
+    input("🛑 Presiona Enter para detener el bot manualmente...")
+    STOP_MANUAL = True
 
 if __name__ == '__main__':
+    threading.Thread(target=stop_bot).start()
     main()
