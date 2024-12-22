@@ -5,10 +5,14 @@ from dotenv import load_dotenv
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey as PublicKey
 from solders.keypair import Keypair
+from solders.instruction import Instruction
 from solders.transaction import Transaction
 from solders.system_program import transfer, TransferParams
+from solders.message import Message
 from solana.rpc.commitment import Confirmed
 import threading
+from solana.rpc.types import TxOpts
+import requests
 
 # Cargar variables de entorno
 load_dotenv()
@@ -17,7 +21,7 @@ load_dotenv()
 PRIVATE_KEY = os.getenv('PRIVATE_KEY')
 PUBLIC_KEY = os.getenv('PUBLIC_KEY')
 RPC_URL = f"https://devnet.helius-rpc.com/?api-key={os.getenv('HELIUS_API_KEY')}"
-TOKEN_ADDRESS = "nombre_token"  # Se define más adelante
+TOKEN_ADDRESS = "GvmTPPD7M38kpkncdEr3K25fk64TDYWHuLjKU2WXVoci"  # Se define más adelante
 RIESGO_USDT = 10  # Monto en USDT definido por el usuario
 CONDICION_SALIDA = True  # Activar la condición de salida
 UMBRAL_SALIDA = 1.01  # Salir cuando el valor del token aumente un 1%
@@ -94,52 +98,117 @@ def obtener_balance(public_key):
         print(f"❌ Error al obtener el balance: {e}")
         return None
 
-# Función para comprar tokens (simulada en Devnet)
-def comprar_token(riesgo_sol):
-    if TOKEN_ADDRESS == "nombre_token":
-        print("❌ Error: El token no está definido. Por favor, define un TOKEN_ADDRESS válido.")
-        return
+# Obtener el bloque reciente
+def obtener_recent_blockhash():
     try:
-        print(f"🛒 Simulando compra de {riesgo_sol:.4f} SOL del token {TOKEN_ADDRESS}...")
-        txn = Transaction(
-            fee_payer=public_key,
-            recent_blockhash=client.get_recent_blockhash().value.blockhash
-        )
-        txn.add(
+        recent_blockhash = client.get_latest_blockhash(Confirmed).value.blockhash
+        return recent_blockhash
+    except Exception as e:
+        print(f"❌ Error al obtener el blockhash reciente: {e}")
+        return None
+
+
+# 🔍 Función para obtener la billetera del vendedor
+def obtener_seller_wallet(token_address):
+    """
+    Encuentra automáticamente la billetera para comprar un token dado su address.
+    """
+    try:
+        # Consultar API de Helius
+        url = f"https://api.helius.xyz/v0/token-metadata?api-key={os.getenv('HELIUS_API_KEY')}&id={token_address}"
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            data = response.json()
+            seller_wallet = data.get('mint', {}).get('authority')
+            
+            if seller_wallet:
+                print(f"✅ SELLER_WALLET detectado automáticamente: {seller_wallet}")
+                return seller_wallet
+            else:
+                print("❌ No se encontró la 'authority' en los metadatos del token.")
+                return None
+        else:
+            print(f"❌ Error en la API (Código {response.status_code})")
+            return None
+    except Exception as e:
+        print(f"❌ Error al obtener SELLER_WALLET: {e}")
+        return None
+    
+# 🛒 Comprar Tokens Automáticamente
+def comprar_token(cantidad_sol, seller_wallet):
+    """
+    Realiza una compra enviando SOL a la billetera del vendedor.
+    """
+    try:
+        seller_public_key = PublicKey(seller_wallet)
+        
+        tx = Transaction()
+        tx.add(
             transfer(
                 TransferParams(
-                    from_pubkey=public_key,
-                    to_pubkey=PublicKey.from_string("EjemploDireccionDestino"),
-                    lamports=int(riesgo_sol * 1e9)
+                    from_pubkey=keypair.public_key,
+                    to_pubkey=seller_public_key,
+                    lamports=int(cantidad_sol * 10**9)  # Convertir SOL a lamports
                 )
             )
         )
-        response = client.send_transaction(txn, keypair, opts={"skip_preflight": True, "preflight_commitment": Confirmed})
-        print(f"✅ Compra simulada completada: {response}")
-        return obtener_precio_solana()
+        
+        # Enviar la transacción
+        response = client.send_transaction(
+            tx, keypair, opts=TxOpts(skip_preflight=True)
+        )
+        print(f"✅ Transacción enviada: {response['result']}")
+        return response['result']
+    
     except Exception as e:
-        print(f"❌ Error al realizar la compra simulada: {e}")
+        print(f"❌ Error al comprar token: {e}")
         return None
+
+
+    
+# Hilo para el botón de stop manual
+def stop_bot():
+    global STOP_MANUAL
+    input("🛑 Presiona Enter para detener el bot manualmente...")
+    STOP_MANUAL = True
 
 # Función principal del bot
 def main():
     global STOP_MANUAL
+    
+    # 1️⃣ Obtener el precio actual de Solana
     precio_solana = obtener_precio_solana()
     if not precio_solana:
         print("❌ No se pudo obtener el precio de Solana. Saliendo...")
         return
 
+    # 2️⃣ Obtener el balance de la billetera
     balance = obtener_balance(public_key)
     if balance is None:
         return
 
+    # 3️⃣ Calcular el riesgo en SOL
     riesgo_sol = calcular_riesgo_sol(RIESGO_USDT, precio_solana)
     if riesgo_sol is None:
         return
 
     calcular_riesgo_porcentual(balance, riesgo_sol)
-    precio_compra = comprar_token(riesgo_sol)
+
+    # 4️⃣ Detectar automáticamente el SELLER_WALLET
+    seller_wallet = obtener_seller_wallet(TOKEN_ADDRESS)
+    if not seller_wallet:
+        print("❌ No se pudo detectar SELLER_WALLET. Verifica la dirección del token.")
+        return
+
+    print(f"✅ SELLER_WALLET detectado: {seller_wallet}")
+
+    # 5️⃣ Realizar la compra del token
+    precio_compra = comprar_token(riesgo_sol, seller_wallet)
     if precio_compra:
+        print(f"✅ Compra realizada. Precio de compra: {precio_compra}")
+        
+        # 6️⃣ Monitorear la condición de salida
         while CONDICION_SALIDA and not STOP_MANUAL:
             precio_actual = obtener_precio_solana()
             if precio_actual:
@@ -150,13 +219,11 @@ def main():
                     print(f"✅ Condición de salida cumplida (Bajada): Precio actual {precio_actual:.2f} USD")
                     break
             time.sleep(10)
+    else:
+        print("❌ La compra no se pudo completar. Revisa los logs anteriores.")
+    
     print("✅ Bot detenido.")
 
-# Hilo para el botón de stop manual
-def stop_bot():
-    global STOP_MANUAL
-    input("🛑 Presiona Enter para detener el bot manualmente...")
-    STOP_MANUAL = True
 
 if __name__ == '__main__':
     threading.Thread(target=stop_bot).start()
