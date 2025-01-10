@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 import pyperclip
 import json
 import pandas as pd
-import webbrowser
 import os
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 
 # Configuration
 INTERVAL = 45 * 60  # 45 minutes in seconds
@@ -88,8 +90,27 @@ def wait_for_copy():
             print("Copy action detected!")
             return current_clipboard_content
 
+def get_driver():
+    options = Options()
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+    options.add_argument("--disable-blink-features=AutomationControlled")
+
+    service = Service('/usr/bin/chromedriver')  # Adjust path to your chromedriver
+    driver = webdriver.Chrome(service=service, options=options)
+
+    # Cloudflare bypass
+    # IMPORTANT. Solve the Cloudflare challenge manually, then open a new tab with the same URL and solve the challenge again.
+    # After that, the script will run without any issues. (you can close the second tab if you want)
+    driver.get("https://gmgn.ai/api/v1/token_kline/sol/7xXJiyap6a389EWw7YkgBEd3VPVT9f3Hv5xEuUM7pump?resolution=1m&from=1736427240&to=1736444798")
+    time.sleep(15)
+
+    return driver
+
 # Main script
 def main(output_folder="output"):
+    # get selenium driver with cloudflare bypass
+    driver = get_driver()
     os.makedirs(output_folder, exist_ok=True)
 
     tokens_file = os.path.join(output_folder, "tokens.txt")
@@ -134,14 +155,17 @@ def main(output_folder="output"):
         while not price_dropped and not price_stopped_moving:
             link = generate_link(token_address, start_time_unix, end_time_unix)
             print(f"Iteration {iteration}: Token {token_address} - Generated Link: {link}")
-            webbrowser.open(link)
 
-            json_data = wait_for_copy()
+            # SELENIUM LOGIC
+            driver.get(link)
+            raw_json = driver.find_element("tag name", "pre").text
+
             try:
-                json_data = json.loads(json_data)
+                json_data = json.loads(raw_json)
             except json.JSONDecodeError:
                 print("Invalid JSON data. Skipping this iteration.")
                 continue
+            
             df = process_json_data(json_data)
 
             if initial_price is None:
@@ -182,5 +206,6 @@ def main(output_folder="output"):
             tf.writelines(remaining_tokens)
 
 if __name__ == "__main__":
+    print("IMPORTANT. Read the comments in get_driver method before running the script.")
     folder = input("Enter rug farm name (i.e. folder name. default is 'output'): ")
     main(folder if folder else "output")
