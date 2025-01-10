@@ -66,6 +66,12 @@ def check_price_drop(df, initial_price):
             return True, row['Time']
     return False, None
 
+
+# Check if price has stopped moving with a margin of 1%
+def check_price_stopped(initial_price, last_price, margin=0.1):
+    return abs(last_price - initial_price) <= initial_price * margin
+    
+
 def translate_time(human_time):
     return int(time.mktime(datetime.strptime(human_time, "%m/%d/%Y %H:%M").timetuple()))
 
@@ -123,8 +129,9 @@ def main(output_folder="output"):
 
         end_time_unix = start_time_unix + INTERVAL
         price_dropped = False
+        price_stopped_moving = False
 
-        while not price_dropped:
+        while not price_dropped and not price_stopped_moving:
             link = generate_link(token_address, start_time_unix, end_time_unix)
             print(f"Iteration {iteration}: Token {token_address} - Generated Link: {link}")
             webbrowser.open(link)
@@ -143,10 +150,17 @@ def main(output_folder="output"):
             header = iteration == 1
 
             price_dropped, drop_time = check_price_drop(df, initial_price)
+            price_stopped_moving = check_price_stopped(initial_price, float(df['close'].iloc[-1]))
 
+            # Cut the data after the price drop is detected + 10 min
             if price_dropped:
                 print(f"Price drop detected for {token_address}. Stopping data collection.")
-                df = df[df['Time'] <= (drop_time + 60 * 8)]
+                df = df[df['Time'] <= (drop_time + 60 * 10)]
+
+            # Check if price has stopped moving
+            if price_stopped_moving:
+                print(f"Price has stopped moving for {token_address}. Stopping data collection.")
+                break
 
             df.to_csv(csv_file, mode='w' if iteration == 1 else 'a', index=False, header=header)
 
