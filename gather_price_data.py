@@ -2,8 +2,7 @@ import time
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 import random
-from datetime import datetime, timedelta
-import pyperclip
+from datetime import datetime
 import json
 import pandas as pd
 import os
@@ -14,6 +13,9 @@ from selenium.webdriver.chrome.options import Options
 # Configuration
 INTERVAL = 45 * 60  # 45 minutes in seconds
 PRICE_DROP_THRESHOLD = 0.6  # 60%
+
+
+# GET TOKEN CREATION DATE
 
 def smart_retry(api_call, max_retries=5, backoff_factor=0.5):
     retries = 0
@@ -28,6 +30,7 @@ def smart_retry(api_call, max_retries=5, backoff_factor=0.5):
     raise RuntimeError("Max retries exceeded")
 
 def get_token_creation_date(token_mint_address: str) -> int:
+    print(f"\033[94mGetting token creation date for \033[0m\033[1m{token_mint_address}... \033[0m")
     solana_client = Client("https://docs-demo.solana-mainnet.quiknode.pro/")
 
     signatures = []
@@ -80,15 +83,6 @@ def translate_time(human_time):
 def generate_link(token_address, start, end):
     return f"https://gmgn.ai/api/v1/token_kline/sol/{token_address}?resolution=1s&from={start}&to={end}"
 
-def wait_for_copy():
-    last_clipboard_content = pyperclip.paste()
-    print("Waiting for a copy action...")
-    while True:
-        time.sleep(0.5)
-        current_clipboard_content = pyperclip.paste()
-        if current_clipboard_content != last_clipboard_content:
-            print("Copy action detected!")
-            return current_clipboard_content
 
 def get_driver():
     options = Options()
@@ -130,6 +124,8 @@ def main(output_folder="output"):
     with open(tokens_file, "r") as file:
         token_addresses = [line.strip() for line in file if line.strip() and line.strip() not in processed_tokens]
 
+    failed_tokens = []
+
     for token_address in token_addresses:
         token_folder = os.path.join(output_folder, "price_data")
         os.makedirs(token_folder, exist_ok=True)
@@ -151,12 +147,13 @@ def main(output_folder="output"):
         end_time_unix = start_time_unix + INTERVAL
         price_dropped = False
         price_stopped_moving = False
+        error = False
 
         while not price_dropped and not price_stopped_moving:
             link = generate_link(token_address, start_time_unix, end_time_unix)
-            print(f"Iteration {iteration}: Token {token_address} - Generated Link: {link}")
 
             # SELENIUM LOGIC
+            driver.get("about:blank")
             driver.get(link)
             raw_json = driver.find_element("tag name", "pre").text
 
@@ -166,7 +163,13 @@ def main(output_folder="output"):
                 print("Invalid JSON data. Skipping this iteration.")
                 continue
             
-            df = process_json_data(json_data)
+            try:
+                df = process_json_data(json_data)
+            except KeyError:
+                print("Invalid JSON data. Skipping this token.")
+                error = True
+                failed_tokens.append(token_address)
+                break
 
             if initial_price is None:
                 initial_price = float(df['close'].iloc[0])
@@ -190,11 +193,14 @@ def main(output_folder="output"):
 
             start_time_unix = end_time_unix
             end_time_unix = start_time_unix + INTERVAL
-            iteration += 1
-            print("Waiting for the next interval...")
-            time.sleep(1)
 
-        print(f"Processing completed for token {token_address}.")
+            print(f"Iteration {iteration} completed. Data saved to {csv_file}.")
+            iteration += 1
+
+        if error:
+            print(f"\033[91mError occurred for token \033[0m\033[1m{token_address}.\033[0m\n")
+        else:    
+            print(f"\033[92mProcessing completed for token \033[0m\033[1m{token_address}.\033[0m\n")
 
         with open(processed_file, "a") as pf:
             pf.write(token_address + "\n")
@@ -204,6 +210,15 @@ def main(output_folder="output"):
             remaining_tokens = [line for line in tf if line.strip() != token_address]
         with open(tokens_file, "w") as tf:
             tf.writelines(remaining_tokens)
+
+    if(len(failed_tokens) == 0):
+        print("\033[92mAll tokens processed successfully.\033[0m")
+    else:
+        print("\033[91mFailed tokens:\033[0m")
+        for token in failed_tokens:
+            print(token + "\n")
+    
+    driver.quit()
 
 if __name__ == "__main__":
     print("IMPORTANT. Read the comments in get_driver method before running the script.")
