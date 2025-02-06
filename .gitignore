@@ -1,25 +1,3 @@
-# Ignorar el entorno virtual
-venv/
-.env
-
-# Archivos temporales y de sistema
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.log
-
-# Metadatos de herramientas específicas
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-
-# Archivos específicos de dependencias
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Archivos de metadata de Solana
-metadata/
-
+rugfarms/*/transfer_data
+rugfarms/*/price_data
+rugfarms/*/backtest_results.*
