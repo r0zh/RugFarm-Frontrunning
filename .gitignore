@@ -1,3 +1,6 @@
 rugfarms/*/transfer_data
 rugfarms/*/price_data
 rugfarms/*/backtest_results.*
+
+*/__pycache__/
+*/.ipynb_checkpoints/
