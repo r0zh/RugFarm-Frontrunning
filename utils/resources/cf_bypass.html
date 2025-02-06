@@ -1,0 +1,72 @@
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        a {
+            display: block;
+            margin: 10px 0;
+            text-decoration: none;
+            color: #007bff;
+            font-size: 22px;
+            /* Increased font size */
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        button {
+            background-color: transparent;
+            color: #28a745;
+            font-size: 22px;
+            /* Increased font size */
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:focus {
+            outline: none;
+        }
+
+        div {
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <p style="font-size: 22px; font-weight: bold;">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Cloudflare_Logo.svg/320px-Cloudflare_Logo.svg.png"
+                alt="Cloudflare" width="200"
+                onerror="this.style.display='none'; this.outerHTML = '<span>CLOUDFLARE</span>'">
+            BYPASS
+        </p>
+        <p>Open the website/s you need and solve the captcha/s. <br><br>
+            Then click the "✅" buton.</p>
+        <br>
+        <a href=" https://solscan.io" target="_blank">solscan</a>
+        <a href="https://gmgn.ai/api/v1/token_kline/sol/Sol" target="_blank">gmgn</a>
+        <br>
+        <button id="clickTracker" value="not_clicked">✅</button>
+    </div>
+    <script>
+        document.getElementById("clickTracker").addEventListener("click", function () {
+            document.getElementById("clickTracker").value = "clicked";
+        });
+    </script>
+</body>
+
+</html>
